@@ -1,0 +1,12 @@
+Executable       = /home/mcoughlin/DeepClean/process_segment.py
+Universe         = vanilla
+getenv           = True
+RequestMemory    = 8192
+accounting_group = ligo.dev.o3.detchar.explore.test
+Arguments        = $(gps_start) $(gps_stop) $(filter_file) $(out_folder)
+Error            = /home/mcoughlin/DeepClean/condor/log/err.$(macrojobnumber)
+Output           = /home/mcoughlin/DeepClean/condor/log/out.$(macrojobnumber)
+Log              = /home/mcoughlin/DeepClean/condor/log/log.$(macrojobnumber)
+Notification     = never
+Queue 1
+

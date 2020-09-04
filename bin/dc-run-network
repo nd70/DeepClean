@@ -1,0 +1,322 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+
+import matplotlib
+matplotlib.use("agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+
+import pickle
+import sys
+import argparse
+
+import scipy.io as sio
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
+import deepclean.preprocessing as ppr
+import deepclean.analysis as ana
+import deepclean.models as mod
+
+ana.set_plot_style()
+
+from configparser import ConfigParser
+
+FLAG = "tensorflow"
+
+def run_network(
+    # Data processing
+    datafile   = 'Data/H1_data_array.mat',
+    data_type  = 'real',
+    loop       = 'Loop_0',
+    hc_offset  = 5,
+    ini_file   = '../configs/configs.ini',
+    lowcut     = 3.0,
+    highcut    = 60.0,
+    N_bp       = 8,
+    preFilter  = True,
+    postFilter = True,
+    save_mat   = False,
+    subsystems = 'all',
+    tfrac      = 0.5,
+
+    # Plots
+    fmin    = 4,
+    fmax    = 256,
+    plotDir = 'Plots',
+
+    # Network
+    recurrent_activation = 'tanh',
+    recurrent_initializer = 'glorot_uniform',
+    dense_activation = 'relu',
+    dense_kernel_initializer = 'glorot_uniform',
+    dense_bias_initializer = 'ones',
+    beta_1     = 0.9,
+    beta_2     = 0.999,
+    clean_darm = [],
+    decay      = None,
+    dropout    = 0.1,
+    epochs     = 100,
+    epsilon    = 1e-8,
+    lookback   = 15,
+    loss       = 'mae',
+    lr         = None,
+    momentum   = 0.0,
+    nesterov   = False,
+    optimizer  = 'adam',
+    recurrent_dropout = 0.0,
+    rho        = None,
+    verbose    = 1,
+    logDir     = 'log',
+    **kwargs
+    ):
+
+    plotDir = plotDir.replace('(', '').replace(')', '')
+    logDir = logDir.replace('(', '').replace(')', '')
+    logDir = '{}/{}'.format(logDir, loop)
+
+    # create folder if folder does not exist
+    if not os.path.isdir(plotDir):
+        os.system('mkdir -p {}'.format(plotDir))
+
+    # load data
+    scaled, nd, fs, scaler, chans = ppr.load_data(datafile   = datafile,
+                                                  data_type  = data_type,
+                                                  ini_file   = ini_file,
+                                                  lowcut     = lowcut,
+                                                  highcut    = highcut,
+                                                  N_bp       = N_bp,
+                                                  preFilter  = preFilter,
+                                                  save_mat   = save_mat,
+                                                  clean_darm = clean_darm,
+                                                  subsystems = subsystems,
+                                                  return_chans = True)
+
+    # split into training and testing data)
+    tfrac = int(tfrac * scaled.shape[0])
+    x_train, y_train = scaled[:tfrac, 1:], scaled[:tfrac, 0]
+    x_test,  y_test  = scaled[tfrac:, 1:], scaled[tfrac:, 0]
+
+    # apply lookbackss
+    x_train = ppr.do_lookback(x_train, steps=lookback)
+    x_test  = ppr.do_lookback(x_test,  steps=lookback)
+
+    # account for first samples (lookback - 1) with no lookback
+    y_train = y_train[-x_train.shape[0]:]
+    y_test  = y_test[-x_test.shape[0]:]
+
+    # build network architecture and compile
+    input_shape = (x_train.shape[1], x_train.shape[2])
+    batch_size = min(int(x_train.shape[0] / 100), 1024)
+
+    if FLAG == "tensorflow":
+        model = mod.tf.DeepClean(
+            input_shape = input_shape,
+            loss_type   = loss,
+            lowcut      = lowcut,
+            highcut     = highcut,
+            fs          = fs,
+            recurrent_activation       = recurrent_activation,
+            recurrent_initializer      = recurrent_initializer,
+            dense_activation           = dense_activation,
+            dense_kernel_initializer   = dense_kernel_initializer,
+            dense_bias_initializer     = dense_bias_initializer,
+            dropout     = dropout,
+            recurrent_dropout = recurrent_dropout,
+            optimizer   = optimizer,
+            decay       = decay,
+            lr          = lr,
+            momentum    = momentum,
+            nesterov    = nesterov,
+            beta_1      = beta_1,
+            beta_2      = beta_2,
+            epsilon     = epsilon,
+            rho         = rho)
+
+        # create session
+        sess = tf.Session()
+        sess.run(tf.global_variables_initializer())
+
+        # training
+        train_loss, test_loss = model.fit(
+            x_train, y_train, sess,
+            epochs          = epochs,
+            batch_size      = batch_size,
+            validation_data = (x_test, y_test),
+            verbose         = verbose,
+            logdir          = logDir)
+
+        # make a prediction
+        sys.stdout.write('\r\n[+] Generating network prediction... ')
+        sys.stdout.flush()
+        yhat = model.predict(x_test, sess, batch_size=batch_size)
+
+    elif FLAG == "keras":
+        model = mod.keras.create_model(
+            input_shape = input_shape,
+            loss        = loss,
+            recurrent_activation       = recurrent_activation,
+            recurrent_initializer      = recurrent_initializer,
+            dense_activation           = dense_activation,
+            dense_kernel_initializer   = dense_kernel_initializer,
+            dense_bias_initializer     = dense_bias_initializer,
+            dropout     = dropout,
+            recurrent_dropout = recurrent_dropout,
+            optimizer   = optimizer,
+            decay       = decay,
+            lr          = lr,
+            momentum    = momentum,
+            nesterov    = nesterov,
+            beta_1      = beta_1,
+            beta_2      = beta_2,
+            epsilon     = epsilon,
+            rho         = rho,)
+        tb_callback = mod.keras.create_callbacks(logDir, batch_size)
+
+        # fit network
+        history = model.fit(x_train, y_train,
+                            epochs          = epochs,
+                            batch_size      = batch_size,
+                            validation_data = (x_test, y_test),
+                            verbose         = verbose,
+                            callbacks       = [tb_callback])
+        train_loss = history.history['loss']
+        test_loss = history.history['val_loss']
+
+        # make a prediction
+        sys.stdout.write('\r\n[+] Generating network prediction... ')
+        sys.stdout.flush()
+        yhat = model.predict(x_test, batch_size=batch_size)
+
+    sys.stdout.write('Done\n')
+
+    yhat = np.concatenate((yhat, scaled[:len(yhat), :-1]), axis=1)
+    yhat = scaler.inverse_transform(yhat)
+
+    # get target value (original data instead of rescaling)
+    inv_yhat = yhat[:, 0]
+    inv_yhat = inv_yhat.reshape((len(inv_yhat)))
+    inv_y    = nd[tfrac+lookback:, 0]
+    inv_y    = inv_y.reshape((len(inv_y)))
+
+    # bandpass filter to remove artificats from prefilter
+    if postFilter:
+        inv_yhat = ppr.phase_filter(inv_yhat,
+                                    fs      = fs,
+                                    order   = N_bp,
+                                    lowcut  = lowcut  + hc_offset,
+                                    highcut = highcut - hc_offset)
+
+    plt.close()
+    plt.plot(train_loss, label='train')
+    plt.plot(test_loss, label='test')
+    plt.title('Loss {}'.format(loop))
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig('{0}/{1}_loss.png'.format(plotDir, loop))
+    plt.close()
+
+    # plot PSD
+    ana.plot_psd(inv_y, inv_yhat,
+                 fs      = fs,
+                 plotDir = plotDir,
+                 saveas  = '{}_frequency_validation'.format(loop),
+                 title   = '{} Frequency Validation'.format(loop.title()),
+                 fmin    = fmin,
+                 fmax    = fmax)
+
+    sys.stdout.write('Done\n')
+
+    # # apply subtraction
+    # if output is not None:
+
+    #     # create output file if output file does not exist
+    #     darmDir = os.path.dirname(output)
+    #     if len(darmDir) > 0:
+    #         if not os.path.isdir(darmDir):
+    #             os.system('mkdir -p {}'.format(darmDir))
+
+    #     if not os.path.isfile(output):
+    #         darm = nd[tfrac+lookback:, 0]
+    #         sio.savemat(output, {'data': darm, 'fsample': np.array([[fs]])})
+
+    #     # subtract
+    #     darmFile = sio.loadmat(output)
+    #     darmFile['data'] -= inv_yhat
+    #     sio.savemat(output, darmFile)
+
+    return inv_yhat, inv_y, fs
+
+
+if __name__ == '__main__':
+
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    os.chdir(dir_path)
+    dflt_ini = '{}/deepclean_ve/configs/configs.ini'.format(os.environ['HOME'])
+
+    def parse_command_line():
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--ini_file", "-i",
+                            help    = "config file to read",
+                            default = dflt_ini,
+                            dest    = "ini_file",
+                            type    = str)
+        parser.add_argument("--flag", "-f",
+                            help    = "tensorflow or keras",
+                            default = "tensorflow",
+                            dest    = "flag",
+                            type    = str)
+
+        params = parser.parse_args()
+        return params
+
+    params    = parse_command_line()
+    ini_file  = params.ini_file
+    data_dict = ppr.get_run_params(ini_file, 'Data')
+    to_run    = ppr.get_run_params(ini_file, 'To_Run')
+
+    # tensorflow/keras flag
+    FLAG = params.flag
+    if not FLAG in ("tensorflow", "keras"):
+        print('ERROR: Unknown flag. Must be "tensorflow" or "keras".')
+        sys.exit(1)
+
+    print('[+] Using {}'.format(FLAG))
+    print('[+] Reading from {}...'.format(ini_file))
+
+    param_dict  = {}
+    predictions = {}
+    runs = []
+    for ix in range(len(to_run)):
+        loop = 'Loop_{}'.format(ix)
+
+        if to_run[loop]:
+            param_dict[loop]  = ppr.get_run_params(ini_file, loop)
+            param_dict[loop]['loop'] = loop
+            param_dict[loop]['ini_file'] = ini_file
+            param_dict[loop].update(data_dict)
+
+            if len(runs) > 0:
+                subtract_loop = runs[-1]
+                param_dict[loop]['clean_darm'] = predictions[subtract_loop]
+
+            text = '[+] Running {}'.format(loop)
+            print('\n{0}\n{1}'.format(text, '-' * len(text)))
+            predictions[loop], darm, fs = run_network(**param_dict[loop])
+            runs.append(loop)
+
+
+    if len(runs) > 1:
+        ana.plot_progress(darm, predictions.values(),
+                          loops   = runs,
+                          plotDir = param_dict[param_dict.keys()[0]]['plotDir'],
+                          fs      = fs,
+                          fmin    = 4,
+                          fmax    = 256)
+
+    print('[+] Done')

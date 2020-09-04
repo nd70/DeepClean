@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC '-//W3C//DTD HTML 4.01 Transitional//EN'>
+<html lang="en">
+<head>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+
+    <base href=""/>
+
+    <link media="all" href="//netdna.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" type="text/css" rel="stylesheet"></link>
+    <link media="all" href="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.css" type="text/css" rel="stylesheet" ></link>
+    <link media="all" href="//cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.6.0/css/bootstrap-datepicker.min.css" type="text/css" rel="stylesheet" ></link>
+    <link media="all" href="/~detchar/summary/day/{{ datestrymd }}/static/bootstrap-ligo.min.css" type="text/css" rel="stylesheet" ></link>
+    <link media="all" href="/~detchar/summary/day/{{ datestrymd }}/static/gwsumm.min.css" type="text/css" rel="stylesheet" ></link>
+
+    <title>DeepClean</title>
+
+    <script src="//code.jquery.com/jquery-1.12.3.min.js" type="text/javascript"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/moment.js/2.13.0/moment.min.js" type="text/javascript"></script>
+    <script src="//netdna.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" type="text/javascript"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/fancybox/2.1.5/jquery.fancybox.pack.js" type="text/javascript"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/bootstrap-datepicker/1.6.0/js/bootstrap-datepicker.min.js" type="text/javascript"></script>
+    <script src="/~detchar/summary/day/{{ datestrymd }}/static/bootstrap-ligo.min.js" type="text/javascript"></script>
+    <script src="../../templates/gwsumm.min.js"></script>
+
+</head>
+
+<style style="text/css">
+    .hoverTable{
+        width:100%; 
+        border-collapse:collapse; 
+        font-family: arial, sans-serif;
+    }
+    .hoverTable td{ 
+        padding:8px;
+        border:#dddddd 1px solid;
+        text-align: left;
+    }
+    .hoverTable th{ 
+        padding:8px;
+        border:#dddddd 1px solid;
+        text-align: left;
+        font-size: 20;
+    }
+    .hoverTable tr:nth-child(2n) {
+      background-color: #dddddd;
+    }
+
+    .hoverTable tr:nth-child(2n):hover, .hoverTable tr:hover {
+      background-color: #a8ebb2;
+    }
+
+    .hoverTable tr {
+      background-color: white;
+    }
+</style>
+
+<body>
+
+<header class="navbar navbar-fixed-top navbar-all" role="banner">
+    <div class="container">
+        <button class="navbar-toggle" data-toggle="collapse" type="button" data-target=".navbar-collapse">
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+        </button>
+        
+        <!-- Collect the nav links, forms, and other content for toggling -->
+        <a class="navbar-brand step-back" onclick="stepDate(-1)" title="Step back">&laquo;</a>
+        <a id="calendar" data-viewmode="0" title="Show/hide calendar"
+            data-date-format="dd-mm-yyyy" data-date="{{ datestrdmy }}" class="navbar-brand dropdown-toggle">
+                {{ datestrmdy }}
+            <b class="caret"></b></a>
+
+        <a class="navbar-brand step-forward" onclick="stepDate(1)" title="Step forwards">&raquo;</a>
+        
+        <nav class="collapse navbar-collapse" role="navigation">
+            <ul class="nav navbar-nav">
+                <li>
+                    <a href="/~detchar/summary/day/{{ datestrymd }}">Detchar Page </a>
+                </li>
+
+                <li class="dropdown">
+                    <a href="#" class="dropdown-toggle" data-toggle="dropdown"
+                    role="button" aria-haspopup="true" aria-expanded="false">
+                    Runs <span class="caret"></span></a>
+                    <ul class="dropdown-menu">
+                        {% for i in range(runs|length) %}
+                            <li><a href="{{ runs[i] }}">{{ run_names[i] }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </li>
+
+            </ul>
+        </nav>
+    </div>
+</header>
+
+<div class="container">
+    <img src ="../../templates/logo.png" style="margin-left: 25%; width:50%;"/> 
+    <h2>Welcome to Your DeepClean Summary Pages!</h2>
+    <div class="panel-default panel">
+        <div class="panel-heading">
+            <h3> How to navigate this page </h3>
+        </div>
+        <div class="panel-body">
+            <ul>
+                <li>
+                    Previous analyses can be viewed by
+                    clicking on the "Runs" dropdown menu and selecting
+                    the derired run. For different dates, use the calendar
+                    to jump around. The Detchar link goes to the summary
+                    pages for today's date.
+                </li>
+
+            </ul>
+        </div>
+    </div>
+
+</div>
+
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-12">
+                <p>DeepClean v0.1 &copy; 2017.</p>
+                <p>This software was created at the California Institute of Technology
+                and the University of Minnesota by Rich Ormiston, Rana Adhikari,
+                Michael Coughlin and Gabriele Vajente.
+            </div>
+        </div>
+    </div>
+</footer>
+</body>

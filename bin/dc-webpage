@@ -1,0 +1,152 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+import argparse
+import deepclean.exceptions as ex
+import deepclean.preprocessing as ppr
+import os
+import scipy.io as sio
+import time
+
+from datetime import datetime
+from collections import OrderedDict
+from ConfigParser import ConfigParser
+from jinja2 import Environment, PackageLoader, select_autoescape, FileSystemLoader
+
+
+# Change current working directory to bin/
+dir_path = os.path.dirname(os.path.realpath(__file__))
+os.chdir(dir_path)
+
+# Get the Jinja environment
+env = Environment(loader = PackageLoader('deepclean', '../html/templates'),
+                  autoescape = select_autoescape(['html']))
+
+
+def parse_command_line():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--ini-file", "-i",
+                        help    = "Full path to ini file",
+                        dest    = "ini_file",
+                        default = '../configs/configs.ini',
+                        type    = str)
+
+    params = parser.parse_args()
+    return params
+
+
+# Read the config file
+params   = parse_command_line()
+ini_file = params.ini_file
+ex.checkFileExists(ini_file)
+settings = ConfigParser()
+settings.read(ini_file)
+
+# Collect the relevant directories
+basedir   = settings.get('Webpage', 'basedir')
+plot_dir  = basedir + 'Plots/'
+param_dir = basedir + 'configs/configs.ini'
+
+# Get time for webpages
+starttime   = datetime.now()
+datestrmdy  = '%02d-%02d-%d' % (starttime.month, starttime.day,   starttime.year)
+datestrdmy  = '%02d-%02d-%d' % (starttime.day,   starttime.month, starttime.year)
+datestrymd  = '%d%02d%02d'   % (starttime.year,  starttime.month, starttime.day)
+webpage_str = '%d%02d%02d'   % (starttime.year,  starttime.month, starttime.day)
+
+# Various date strings needed for the webpage
+output_dir = '../html/day/{}'.format(webpage_str)
+if not os.path.isdir(output_dir):
+    os.system('mkdir -p {}'.format(output_dir))
+
+# Label Runs so we don't overwrite the files
+runs    = [f for f in os.listdir(output_dir) if f.startswith('run')]
+current = 'Run {}'.format(len(runs))
+version = len(runs)
+
+# Get data
+plots = {}
+all_images = os.listdir(plot_dir)
+loss_images = [x for x in all_images if "loss" in x]
+for ix, im in enumerate(loss_images):
+    new_im = output_dir + '/' + im + '-{}'.format(version)
+    os.system('cp {0}/{1} {2}'.format(plot_dir, im, new_im))
+loss_images = [x+'-{}'.format(version) for x in loss_images]
+
+val_images = [x for x in all_images if "validation" in x]
+for im in val_images:
+    new_im = output_dir + '/' + im + '-{}'.format(version)
+    os.system('cp {0}/{1} {2}'.format(plot_dir, im, new_im))
+val_images = [x+'-{}'.format(version) for x in val_images]
+
+if 3 < len(loss_images) <= 6:
+    plots['loss1'] = loss_images[:3]
+    l1 = loss_images[:3]
+    l2 = loss_images[3:]
+    plots['loss2'] = loss_images[3:]
+
+if 3 < len(val_images) <= 6:
+    plots['val1'] = val_images[:3]
+    plots['val2'] = val_images[3:]
+    v1 = val_images[:3]
+    v2 = val_images[3:]
+else:
+    v1 = val_images
+    v2 = None
+
+if os.path.isfile(plot_dir + 'total_subtraction.png'):
+    im_path = plot_dir + 'total_subtraction.png'
+    os.system('cp {0} {1}/total_sub-{2}.png'.format(im_path, output_dir, version))
+    total = 'total_sub-{}.png'.format(version)
+else:
+    total = None
+
+# Get data info
+data_params = ppr.get_run_params(param_dir, 'Data')
+matfile = sio.loadmat(data_params['datafile'])
+data_params['datafile'] = data_params['datafile'].split('/')[-1]
+chan_list = sorted([c.strip() for c in matfile['chans']])
+plots.update(data_params)
+
+to_run = ppr.get_run_params(ini_file, 'To_Run')
+params  = {}
+for ix in range(len(to_run)):
+    loop = 'Loop_{}'.format(ix)
+    if to_run[loop]:
+        params[loop]  = ppr.get_run_params(ini_file, loop)
+
+params = OrderedDict(sorted(params.items()))
+
+# fill in the template
+template = env.get_template('model_summary.html')
+webpage  = open('{0}/run_{1}.html'.format(output_dir, len(runs)), 'w')
+print >> webpage, template.render(datestrdmy = datestrdmy,
+                                  datestrmdy = datestrmdy,
+                                  datestrymd = datestrymd,
+                                  runs       = runs,
+                                  current    = current,
+                                  val_images = val_images,
+                                  loss_images = loss_images,
+                                  l1         = l1,
+                                  l2         = l2,
+                                  v1         = v1,
+                                  v2         = v2,
+                                  total      = total,
+                                  plots      = plots,
+                                  params     = params,
+                                  chan_list  = chan_list)
+webpage.close()
+
+# Make the homepage
+if len(runs) == 0:
+    runs = ['run_0.html']
+
+run_names = [r.split('.')[0].replace('_', ' ').title() for r in runs]
+template  = env.get_template('homepage.html')
+homepage  = open('{0}/index.html'.format(output_dir), 'w')
+print >> homepage, template.render(datestrdmy = datestrdmy,
+                                   datestrmdy = datestrmdy,
+                                   datestrymd = datestrymd,
+                                   run_names  = run_names,
+                                   runs       = runs)
+homepage.close()
